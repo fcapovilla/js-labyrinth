@@ -1,0 +1,51 @@
+<html>
+    <head>
+        <style>
+            .wall {
+                width:5;
+                height:5;
+                background-color:black;
+            }
+            .floor {
+                width:5;
+                height:5;
+                background-color:white;
+            }
+        </style>
+
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js"></script>
+        <script src="dungeonGenerator.js"></script>
+    </head>
+    <body>
+        <script type="text/javascript">
+            function displayMap(map) {
+                var table = $('<table cellspacing="0" cellpadding="0" border="0">');
+                $.each(map, function(i,row) {
+                    var tr = $('<tr>');
+                    $.each(row, function(i,cell) {
+                        var td = $('<td>')
+                        if(cell == 0) {
+                            td.addClass('floor');
+                        }
+                        else if(cell == 3) {
+                            td.css('background-color', 'blue');
+                        }
+                        else if(cell == 4) {
+                            td.css('background-color', 'red');
+                        }
+                        else {
+                            td.addClass('wall');
+                        }
+                        tr.append(td);
+                    });
+                    table.append(tr);
+                });
+                $('table').remove();
+                $('body').append(table);
+            }
+
+            var map = generateMap(51, 51);
+            displayMap(map);
+        </script>
+    </body>
+</html>

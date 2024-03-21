@@ -1,0 +1,309 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>Labyrinthe 3D WebGL</title>
+		<style>
+			#container {
+				background: #000;
+				width: 100%;
+				height: 600px;
+			}
+
+			body {
+				background-color: #000000;
+				margin: 0px;
+				overflow: hidden;
+			}
+		</style>
+	</head>
+    <body>
+		<div id="container">
+		</div>
+
+	<script src="../js/jquery.min.js"></script>
+	<script src="../js/three.min.js"></script>
+    <script src="dungeonGenerator.js"></script>
+
+	<script type="text/javascript">
+
+	// get the DOM element to attach to
+	var container = $('#container');
+
+	// set some camera attributes
+	var VIEW_ANGLE = 45;
+	var NEAR = 0.1;
+	var FAR = 10000;
+
+    var MAP_WIDTH = 21;
+    var MAP_HEIGHT = 21;
+    var MAP_FLOORS = 21;
+    var PLAYER_SPEED = 40;
+    var GAME_WON = false;
+
+	// create a WebGL renderer, camera
+	// and a scene
+    var renderer = new THREE.WebGLRenderer({antialias: true});
+	var camera = new THREE.PerspectiveCamera(VIEW_ANGLE, window.innerWidth/window.innerHeight, NEAR, FAR);
+	camera.position.set(1000, 200, 1000);
+    camera.rotation.y = Math.PI;
+    camera.eulerOrder = "YXZ";
+	var scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2( 0x000000, 0.0003 );
+
+    // Take care of window resizes
+    $(window).resize(function() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize( window.innerWidth, window.innerHeight );
+    }).resize();
+
+    // Manage keypresses
+    var key = {};
+    $(window).keydown(function(event) {
+        switch(event.which) {
+            case 33: key.pgup = true; return false;
+            case 34: key.pgdown = true; return false;
+            case 37: key.left = true; return false;
+            case 38: key.up = true; return false;
+            case 39: key.right = true; return false;
+            case 40: key.down = true; return false;
+        }
+    });
+    $(window).keyup(function(event) {
+        switch(event.which) {
+            case 33: key.pgup = false; return false;
+            case 34: key.pgdown = false; return false;
+            case 37: key.left = false; return false;
+            case 38: key.up = false; return false;
+            case 39: key.right = false; return false;
+            case 40: key.down = false; return false;
+        }
+    });
+
+    // Create light
+    scene.add( new THREE.AmbientLight( 0x777777 ) );
+
+    var directionalLight = new THREE.DirectionalLight( 0xFFFFFF, 1 );
+    directionalLight.position.set( 1, 1, 0.5 ).normalize();
+    scene.add( directionalLight );
+
+    var pointLight = new THREE.PointLight( 0xFFFFFF, 2, 2000);
+    pointLight.position = camera.position;
+    scene.add( pointLight );
+
+	// start the renderer - set the clear colour
+	// to a full black
+	renderer.setClearColor(new THREE.Color(0));
+
+	// attach the render-supplied DOM element
+	container.append(renderer.domElement);
+
+	// create the particle variables
+	var particleCount = 2000;
+	var particles = new THREE.Geometry();
+	var pMaterial = new THREE.ParticleBasicMaterial({
+        color: 0xFFFFFF,
+        size: 10,
+        map: THREE.ImageUtils.loadTexture("images/particle.png"),
+        blending: THREE.AdditiveBlending,
+        transparent: true
+    });
+
+	// now create the individual particles
+	for(var p = 0; p < particleCount; p++) {
+		// create a particle with random position
+		var particle = new THREE.Vector3(
+            Math.random() * 1000 - 500,
+            Math.random() * 600,
+            Math.random() * 1000 - 500
+		);
+
+		// create a velocity vector
+		particle.velocity = new THREE.Vector3(0, Math.random()-2, 0);
+
+		// add it to the geometry
+		particles.vertices.push(particle);
+	}
+
+	// create the particle system
+    snowParticles = new THREE.Object3D();
+    particleSystems = [];
+    for(i=0;i<9;i++) {
+        particleSystems[i] = new THREE.ParticleSystem(particles, pMaterial);
+        particleSystems[i].position.z = i%3*1000-1000;
+        particleSystems[i].position.x = Math.floor(i/3)*1000-1000;
+        snowParticles.add(particleSystems[i]);
+    }
+    moveSnow();
+    scene.add(snowParticles);
+
+    var wind = new THREE.Vector3(
+        Math.random()-0.5,
+        0,
+        Math.random()-0.5
+    );
+
+    // Create the floor
+    var planeTexture = THREE.ImageUtils.loadTexture( 'images/street.jpg' );
+    planeTexture.wrapS = THREE.RepeatWrapping;
+    planeTexture.wrapT = THREE.RepeatWrapping;
+    planeTexture.repeat.x = MAP_WIDTH;
+    planeTexture.repeat.y = MAP_HEIGHT;
+    var planeMaterial = new THREE.MeshLambertMaterial({
+        map: planeTexture,
+        anisotropy: renderer.getMaxAnisotropy()
+    });
+    var planeGeometry = new THREE.PlaneGeometry((MAP_WIDTH+1)*1000, (MAP_HEIGHT+1)*1000, MAP_WIDTH, MAP_HEIGHT);
+    var plane = new THREE.Mesh(planeGeometry, planeMaterial);
+    plane.rotation.x = Math.PI + Math.PI / 2;
+    plane.position.x = (MAP_WIDTH/2) * 1000;
+    plane.position.z = (MAP_HEIGHT/2) * 1000;
+    scene.add(plane);
+
+    //Generate the labyrinth
+    var map = generateMap(MAP_FLOORS, MAP_WIDTH, MAP_HEIGHT);
+
+    // Create the walls
+    var cubeMaterial = new THREE.MeshLambertMaterial({
+        map: THREE.ImageUtils.loadTexture( 'images/building.jpg' ),
+        anisotropy: renderer.getMaxAnisotropy()
+    });
+    var cubeGeometry = new THREE.CubeGeometry(1000, 1000, 1000);
+
+    var walls = new THREE.Object3D();
+    for(y=0;y<MAP_FLOORS;y++) {
+        for(x=0;x<MAP_WIDTH;x++) {
+            for(z=0;z<MAP_HEIGHT;z++) {
+                if(map[y][x][z] != 0) {
+                    var cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+                    cube.position.set(x*1000, -y*1000, z*1000);
+                    walls.add(cube);
+                }
+            }
+        }
+    }
+    scene.add(walls);
+
+
+    function randomize(value, min, max, amp, add) {
+        value += Math.random() * amp + add;
+        if(value > max){ value = max; }
+        if(value < min){ value = min; }
+        return value;
+    }
+
+    function movePlayer() {
+        var speed = 0;
+
+        if(key.left) {
+            camera.rotation.y += 0.04;
+        }
+        if(key.right) {
+            camera.rotation.y -= 0.04;
+        }
+        if(key.pgup) { 
+            //camera.rotation.x += 0.04;
+            //if(camera.rotation.x > Math.PI/2) {
+            //    camera.rotation.x = Math.PI/2;
+            //}
+            camera.position.y += PLAYER_SPEED
+        }
+        if(key.pgdown) {
+            //camera.rotation.x -= 0.04;
+            //if(camera.rotation.x < -Math.PI/2) {
+            //    camera.rotation.x = -Math.PI/2;
+            //}
+            camera.position.y -= PLAYER_SPEED
+        }
+
+        if(key.up) {
+            speed = PLAYER_SPEED;
+        }
+        if(key.down) {
+            speed -= PLAYER_SPEED;
+        }
+
+        // Player movement and collision detection
+        var modx = -Math.sin(camera.rotation.y) * speed;
+        //var wallcheck = modx > 0 ? modx+100 : modx-100;
+        //if(map[Math.round((camera.position.x+wallcheck)/1000)][Math.round(camera.position.z/1000)] == 0) {
+            camera.position.x += modx;
+        //}
+
+        var modz = -Math.cos(camera.rotation.y) * speed;
+        //var wallcheck = modz > 0 ? modz+100 : modz-100;
+        //if(map[Math.round(camera.position.x/1000)][Math.round((camera.position.z+wallcheck)/1000)] == 0) {
+            camera.position.z += modz;
+        //}
+
+        // Check if the player escaped the maze
+        if(camera.position.z > (MAP_WIDTH-1)*1000 && !GAME_WON) {
+            alert("Vous avez trouvé la sortie!");
+            GAME_WON = true;
+            key = {};
+        }
+
+        pointLight.position = camera.position;
+    }
+
+    // Snow follows the player's view
+    function moveSnow() {
+        var x = Math.round((camera.position.x - Math.sin(camera.rotation.y) * 800)/1000);
+        var z = Math.round((camera.position.z - Math.cos(camera.rotation.y) * 800)/1000);
+        if(Math.round(snowParticles.position.x/1000) != x) {
+            snowParticles.position.x = x * 1000;
+        }
+        if(Math.round(snowParticles.position.z/1000) != z) {
+            snowParticles.position.z = z * 1000;
+        }
+    }
+
+	// animation loop
+	function update() {
+        movePlayer();
+        moveSnow();
+
+        // Update the wind
+        wind.x = randomize(wind.x, -3, 3, .2, -.1);
+        wind.z = randomize(wind.z, -3, 3, .2, -.1);
+
+		var pCount = particleCount;
+		while(pCount--) {
+			// get the particle
+			var particle = particles.vertices[pCount];
+
+			// check if we need to reset
+			if(particle.y < 0) {
+                particle.x = Math.random() * 1000 - 500,
+				particle.y = 600;
+                particle.z = Math.random() * 1000 - 500,
+
+				particle.velocity.x = 0;
+				particle.velocity.y = -Math.random()-1;
+				particle.velocity.z = 0;
+			}
+
+			// Update the velocity
+            particle.velocity.x = randomize(particle.velocity.x, -2, 2, .2, -.1);
+            particle.velocity.z = randomize(particle.velocity.z, -2, 2, .2, -.1);
+
+			// Update the position
+			particle.addSelf(particle.velocity);
+			particle.addSelf(wind);
+		}
+
+		// flag to the particle system that we've
+		// changed its vertices.
+		particleSystems[0].geometry.verticesNeedUpdate = true;
+
+		renderer.render(scene, camera);
+
+		// set up the next call
+		requestAnimationFrame(update);
+	}
+
+	requestAnimationFrame(update);
+	</script>
+	</body>
+</html>

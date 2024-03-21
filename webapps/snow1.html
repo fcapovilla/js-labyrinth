@@ -1,0 +1,211 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>Test de neige WebGL</title>
+		<style>
+			#container {
+				background: #000;
+				width: 100%;
+				height: 600px;
+			}
+
+			body {
+				background-color: #000000;
+				margin: 0px;
+				overflow: hidden;
+			}
+		</style>
+	</head>
+    <body>
+		<div id="container">
+		</div>
+	</body>
+
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js"></script>
+	<script src="../js/three.min.js"></script>
+
+	<script type="text/javascript">
+
+	// get the DOM element to attach to
+	var container = $('#container');
+
+	// set some camera attributes
+	var VIEW_ANGLE = 45;
+	var NEAR = 0.1;
+	var FAR = 10000;
+
+	// create a WebGL renderer, camera
+	// and a scene
+	var renderer = new THREE.WebGLRenderer();
+	var camera = new THREE.PerspectiveCamera(VIEW_ANGLE, window.innerWidth/window.innerHeight, NEAR, FAR);
+	camera.position.set(0, 300, 300);
+	var scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2( 0x000000, 0.0005 );
+
+    // Take care of window resizes
+    $(window).resize(function() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize( window.innerWidth, window.innerHeight );
+    }).resize();
+
+    // Create light
+    var directionalLight = new THREE.DirectionalLight( 0xFFFFFF, 0.5 );
+    directionalLight.position.set( 10, 100, 10 );
+    scene.add( directionalLight );
+
+	// start the renderer - set the clear colour
+	// to a full black
+	renderer.setClearColor(new THREE.Color(0));
+
+	// attach the render-supplied DOM element
+	container.append(renderer.domElement);
+
+	// create the particle variables
+	var particleCount = 2000;
+	var particles = new THREE.Geometry();
+	var pMaterial = new THREE.ParticleBasicMaterial({
+        color: 0xFFFFFF,
+        size: 10,
+        map: THREE.ImageUtils.loadTexture("images/particle.png"),
+        blending: THREE.AdditiveBlending,
+        transparent: true
+    });
+
+	// now create the individual particles
+	for(var p = 0; p < particleCount; p++) {
+		// create a particle with random position
+		var particle = new THREE.Vector3(
+            Math.random() * 1000 - 500,
+            Math.random() * 600,
+            Math.random() * 1000 - 500
+		);
+
+		// create a velocity vector
+		particle.velocity = new THREE.Vector3(0, Math.random()-2, 0);
+
+		// add it to the geometry
+		particles.vertices.push(particle);
+	}
+
+	// create the particle system
+	var particleSystem = new THREE.ParticleSystem(particles, pMaterial);
+	scene.add(particleSystem);
+
+    for(i=1;i<=6;i++) {
+        var particleSystemClone = new THREE.ParticleSystem(particles, pMaterial);
+        particleSystemClone.position.z = -1000*i;
+        scene.add(particleSystemClone);
+    }
+
+	var particleSystem3 = new THREE.ParticleSystem(particles, pMaterial);
+    particleSystem3.position.z = -2000;
+	scene.add(particleSystem3);
+
+    var wind = new THREE.Vector3(
+        Math.random()-0.5,
+        0,
+        Math.random()-0.5
+    );
+
+    var planeTexture = THREE.ImageUtils.loadTexture( 'images/street.jpg' );
+    planeTexture.wrapS = THREE.RepeatWrapping;
+    planeTexture.wrapT = THREE.RepeatWrapping;
+    planeTexture.repeat.x = 10;
+    planeTexture.repeat.y = 10;
+    var planeMaterial = new THREE.MeshBasicMaterial({
+        map: planeTexture,
+        anisotropy: renderer.getMaxAnisotropy()
+    });
+
+    var cubeMaterial = new THREE.MeshBasicMaterial({
+        map: THREE.ImageUtils.loadTexture( 'images/building.jpg' ),
+        anisotropy: renderer.getMaxAnisotropy()
+    });
+
+    var cubeGeometry = new THREE.CubeGeometry(1000, 2000, 1000);
+    var planeGeometry = new THREE.PlaneGeometry(3000, 3000);
+
+    var tiles = [];
+    for(i=0;i<3;i++) {
+        tiles[i] = new THREE.Object3D();
+
+        var cubes = [];
+        for(j=0;j<4;j++) {
+            cubes[j] = new THREE.Mesh(cubeGeometry, cubeMaterial);
+            tiles[i].add(cubes[j]);
+        }
+
+        cubes[0].position.set(1000, 1000, -1000);
+        cubes[1].position.set(-1000, 1000, -1000);
+        cubes[2].position.set(-1000, 1000, 1000);
+        cubes[3].position.set(1000, 1000, 1000);
+
+        var plane = new THREE.Mesh(planeGeometry, planeMaterial);
+        plane.rotation.x = Math.PI + Math.PI / 2;
+        tiles[i].add(plane);
+
+        scene.add(tiles[i]);
+    }
+
+    tiles[1].position.set(0, 0, -3000);
+    tiles[2].position.set(0, 0, -6000);
+
+    function randomize(value, min, max, amp, add) {
+        value += Math.random() * amp + add;
+        if(value > max){ value = max; }
+        if(value < min){ value = min; }
+        return value;
+    }
+
+	// animation loop
+	function update() {
+        camera.position.z -= 5;
+        if(camera.position.z <= -3000) {
+            camera.position.z += 3000;
+        }
+
+        // Update the wind
+        wind.x = randomize(wind.x, -3, 3, .2, -.1);
+        wind.z = randomize(wind.z, -3, 3, .2, -.1);
+
+		var pCount = particleCount;
+		while(pCount--) {
+			// get the particle
+			var particle = particles.vertices[pCount];
+
+			// check if we need to reset
+			if(particle.y < 0) {
+                particle.x = Math.random() * 1000 - 500,
+				particle.y = 600;
+                particle.z = Math.random() * 1000 - 500,
+
+				particle.velocity.x = 0;
+				particle.velocity.y = -Math.random()-1;
+				particle.velocity.z = 0;
+			}
+
+			// Update the velocity
+            particle.velocity.x = randomize(particle.velocity.x, -2, 2, .2, -.1);
+            particle.velocity.z = randomize(particle.velocity.z, -2, 2, .2, -.1);
+
+			// Update the position
+			particle.addSelf(particle.velocity);
+			particle.addSelf(wind);
+		}
+
+		// flag to the particle system that we've
+		// changed its vertices.
+		particleSystem.geometry.verticesNeedUpdate = true;
+
+		renderer.render(scene, camera);
+
+		// set up the next call
+		requestAnimationFrame(update);
+	}
+
+	requestAnimationFrame(update);
+
+	</script>
+</html>
